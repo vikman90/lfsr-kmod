@@ -2,7 +2,7 @@
  * @file lfsr.c
  * @author Vikman Fernandez-Castro (vmfdez90@gmail.com)
  * @brief LFSR kernel module
- * @version 0.2
+ * @version 0.3
  * @date 2022-11-20
  *
  * @copyright Copyright (c) 2022 Victor Manuel Fernandez Castro
@@ -27,24 +27,7 @@ static void lfsr_shift(void);
 
 DEFINE_MUTEX(lfsr_mutex);
 
-static union {
-    lfsr_t qword;
-    struct {
-        lfsr_t b0:1;
-        lfsr_t b1:1;
-        lfsr_t b2:1;
-        lfsr_t b3:1;
-        lfsr_t b4:1;
-        lfsr_t b5:1;
-        lfsr_t b6:1;
-        lfsr_t b7:1;
-        lfsr_t b8:1;
-        lfsr_t b9:1;
-        lfsr_t b10:1;
-        lfsr_t b11:1;
-        lfsr_t b12:1;
-    } bits;
-} lfsr_state;
+static lfsr_t lfsr_state;
 
 static struct file_operations lfsr_fops = {
     read: lfsr_read,
@@ -57,7 +40,7 @@ static int lfsr_major;
 static struct class * lfsr_cls;
 
 static int __init lfsr_init(void) {
-    lfsr_state.qword = ktime_get_real();
+    lfsr_state = ktime_get_real();
     lfsr_major = register_chrdev(0, LFSR_DEVICE_NAME, &lfsr_fops);
 
     if (lfsr_major < 0) {
@@ -86,23 +69,23 @@ ssize_t lfsr_read(struct file * filep, char __user * buffer, size_t size, loff_t
     mutex_lock(&lfsr_mutex);
 
     for (length = size; length >= sizeof(lfsr_state); length -= sizeof(lfsr_state), buffer += sizeof(lfsr_state)) {
-        put_user(lfsr_state.qword, (lfsr_t *)buffer);
+        put_user(lfsr_state, (lfsr_t *)buffer);
         lfsr_shift();
     }
 
     if (length > 0) {
         if (length & 0x4) {
-            put_user((uint32_t)lfsr_state.qword, (uint32_t *)buffer);
+            put_user((uint32_t)lfsr_state, (uint32_t *)buffer);
             buffer += 4;
         }
 
         if (length & 0x2) {
-            put_user((uint16_t)lfsr_state.qword, (uint16_t *)buffer);
+            put_user((uint16_t)lfsr_state, (uint16_t *)buffer);
             buffer += 2;
         }
 
         if (length & 0x1) {
-            put_user((uint8_t)lfsr_state.qword, (uint8_t *)buffer);
+            put_user((uint8_t)lfsr_state, (uint8_t *)buffer);
         }
 
         lfsr_shift();
@@ -119,7 +102,7 @@ ssize_t lfsr_write(struct file * filep, const char __user * buffer, size_t size,
     for (size_t length = size; length >= sizeof(lfsr_state); length -= sizeof(lfsr_state), buffer += sizeof(lfsr_state)) {
         lfsr_t value;
         get_user(value, (lfsr_t *)buffer);
-        lfsr_state.qword ^= value;
+        lfsr_state ^= value;
     }
 
     mutex_unlock(&lfsr_mutex);
@@ -139,16 +122,30 @@ int lfsr_release(struct inode * inode, struct file * filep) {
 
 void lfsr_shift(void) {
     for (size_t i = 0; i < (sizeof(lfsr_state)); i++) {
-        uint8_t next = lfsr_state.bits.b0 ^ lfsr_state.bits.b2 ^ lfsr_state.bits.b3 ^ lfsr_state.bits.b5;
-        next = (next << 1) | (lfsr_state.bits.b1 ^ lfsr_state.bits.b3 ^ lfsr_state.bits.b4 ^ lfsr_state.bits.b6);
-        next = (next << 1) | (lfsr_state.bits.b2 ^ lfsr_state.bits.b4 ^ lfsr_state.bits.b5 ^ lfsr_state.bits.b7);
-        next = (next << 1) | (lfsr_state.bits.b3 ^ lfsr_state.bits.b5 ^ lfsr_state.bits.b6 ^ lfsr_state.bits.b8);
-        next = (next << 1) | (lfsr_state.bits.b4 ^ lfsr_state.bits.b6 ^ lfsr_state.bits.b7 ^ lfsr_state.bits.b9);
-        next = (next << 1) | (lfsr_state.bits.b5 ^ lfsr_state.bits.b7 ^ lfsr_state.bits.b8 ^ lfsr_state.bits.b10);
-        next = (next << 1) | (lfsr_state.bits.b6 ^ lfsr_state.bits.b8 ^ lfsr_state.bits.b9 ^ lfsr_state.bits.b11);
-        next = (next << 1) | (lfsr_state.bits.b7 ^ lfsr_state.bits.b9 ^ lfsr_state.bits.b10 ^ lfsr_state.bits.b12);
+        uint8_t bit_0 = lfsr_state;
+        uint8_t bit_1 = lfsr_state >> 1;
+        uint8_t bit_2 = lfsr_state >> 2;
+        uint8_t bit_3 = lfsr_state >> 3;
+        uint8_t bit_4 = lfsr_state >> 4;
+        uint8_t bit_5 = lfsr_state >> 5;
+        uint8_t bit_6 = lfsr_state >> 6;
+        uint8_t bit_7 = lfsr_state >> 7;
+        uint8_t bit_8 = lfsr_state >> 8;
+        uint8_t bit_9 = lfsr_state >> 9;
+        uint8_t bit_10 = lfsr_state >> 10;
+        uint8_t bit_11 = lfsr_state >> 11;
+        uint8_t bit_12 = lfsr_state >> 12;
 
-        lfsr_state.qword = (lfsr_state.qword >> 8) | ((lfsr_t)next << 56);
+        uint8_t next = bit_0 ^ bit_2 ^ bit_3 ^ bit_5;
+        next = (next << 1) | (bit_1 ^ bit_3 ^ bit_4 ^ bit_6);
+        next = (next << 1) | (bit_2 ^ bit_4 ^ bit_5 ^ bit_7);
+        next = (next << 1) | (bit_3 ^ bit_5 ^ bit_6 ^ bit_8);
+        next = (next << 1) | (bit_4 ^ bit_6 ^ bit_7 ^ bit_9);
+        next = (next << 1) | (bit_5 ^ bit_7 ^ bit_8 ^ bit_10);
+        next = (next << 1) | (bit_6 ^ bit_8 ^ bit_9 ^ bit_11);
+        next = (next << 1) | (bit_7 ^ bit_9 ^ bit_10 ^ bit_12);
+
+        lfsr_state = (lfsr_state >> 8) | ((lfsr_t)next << 56);
     }
 }
 
