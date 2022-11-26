@@ -2,7 +2,7 @@
  * @file lfsr.c
  * @author Vikman Fernandez-Castro (vmfdez90@gmail.com)
  * @brief LFSR kernel module
- * @version 0.3
+ * @version 0.4
  * @date 2022-11-20
  *
  * @copyright Copyright (c) 2022 Victor Manuel Fernandez Castro
@@ -16,6 +16,7 @@
 #include <linux/uaccess.h>
 
 #define LFSR_DEVICE_NAME "lfsr"
+#define HALF_SHIFT (sizeof(lfsr_t) * 4)
 
 typedef uint64_t lfsr_t;
 
@@ -121,31 +122,9 @@ int lfsr_release(struct inode * inode, struct file * filep) {
 }
 
 void lfsr_shift(void) {
-    for (size_t i = 0; i < (sizeof(lfsr_state)); i++) {
-        uint8_t bit_0 = lfsr_state;
-        uint8_t bit_1 = lfsr_state >> 1;
-        uint8_t bit_2 = lfsr_state >> 2;
-        uint8_t bit_3 = lfsr_state >> 3;
-        uint8_t bit_4 = lfsr_state >> 4;
-        uint8_t bit_5 = lfsr_state >> 5;
-        uint8_t bit_6 = lfsr_state >> 6;
-        uint8_t bit_7 = lfsr_state >> 7;
-        uint8_t bit_8 = lfsr_state >> 8;
-        uint8_t bit_9 = lfsr_state >> 9;
-        uint8_t bit_10 = lfsr_state >> 10;
-        uint8_t bit_11 = lfsr_state >> 11;
-        uint8_t bit_12 = lfsr_state >> 12;
-
-        uint8_t next = bit_0 ^ bit_2 ^ bit_3 ^ bit_5;
-        next = (next << 1) | (bit_1 ^ bit_3 ^ bit_4 ^ bit_6);
-        next = (next << 1) | (bit_2 ^ bit_4 ^ bit_5 ^ bit_7);
-        next = (next << 1) | (bit_3 ^ bit_5 ^ bit_6 ^ bit_8);
-        next = (next << 1) | (bit_4 ^ bit_6 ^ bit_7 ^ bit_9);
-        next = (next << 1) | (bit_5 ^ bit_7 ^ bit_8 ^ bit_10);
-        next = (next << 1) | (bit_6 ^ bit_8 ^ bit_9 ^ bit_11);
-        next = (next << 1) | (bit_7 ^ bit_9 ^ bit_10 ^ bit_12);
-
-        lfsr_state = (lfsr_state >> 8) | ((lfsr_t)next << 56);
+    for (int i = 0; i < 2; i++) {
+        lfsr_t next = lfsr_state ^ (lfsr_state >> 2) ^ (lfsr_state >> 3) ^ (lfsr_state >> 5);
+        lfsr_state = (lfsr_state >> HALF_SHIFT) | (next << HALF_SHIFT);
     }
 }
 
