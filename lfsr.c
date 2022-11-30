@@ -2,7 +2,7 @@
  * @file lfsr.c
  * @author Vikman Fernandez-Castro (vmfdez90@gmail.com)
  * @brief LFSR kernel module
- * @version 0.4
+ * @version 0.5
  * @date 2022-11-20
  *
  * @copyright Copyright (c) 2022 Victor Manuel Fernandez Castro
@@ -13,6 +13,8 @@
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/fs.h>
+#include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/uaccess.h>
 
 #define LFSR_DEVICE_NAME "lfsr"
@@ -65,48 +67,60 @@ static void __exit lfsr_exit(void) {
 }
 
 ssize_t lfsr_read(struct file * filep, char __user * buffer, size_t size, loff_t * offset) {
+    ssize_t retval = size;
     size_t length;
+    char * kptr;
+    char * kbuffer = kmalloc(size, GFP_KERNEL);
+
+    if (kbuffer == NULL) {
+        pr_err("lfsr_read: kmalloc returned NULL.");
+        return -ENOMEM;
+    }
 
     mutex_lock(&lfsr_mutex);
 
-    for (length = size; length >= sizeof(lfsr_state); length -= sizeof(lfsr_state), buffer += sizeof(lfsr_state)) {
-        put_user(lfsr_state, (lfsr_t *)buffer);
+    for (length = size, kptr = kbuffer; length >= sizeof(lfsr_state); length -= sizeof(lfsr_state), kptr += sizeof(lfsr_state)) {
+        *(lfsr_t *)kptr = lfsr_state;
         lfsr_shift();
     }
 
     if (length > 0) {
-        if (length & 0x4) {
-            put_user((uint32_t)lfsr_state, (uint32_t *)buffer);
-            buffer += 4;
-        }
-
-        if (length & 0x2) {
-            put_user((uint16_t)lfsr_state, (uint16_t *)buffer);
-            buffer += 2;
-        }
-
-        if (length & 0x1) {
-            put_user((uint8_t)lfsr_state, (uint8_t *)buffer);
-        }
-
+        memcpy(kptr, &lfsr_state, length);
         lfsr_shift();
     }
 
     mutex_unlock(&lfsr_mutex);
 
-    return size;
+    if (copy_to_user(buffer, kbuffer, size) != 0) {
+        retval = -EFAULT;
+    }
+
+    kfree(kbuffer);
+
+    return retval;
 }
 
 ssize_t lfsr_write(struct file * filep, const char __user * buffer, size_t size, loff_t * offset) {
+    char * kbuffer = kmalloc(size, GFP_KERNEL);
+
+    if (kbuffer == NULL) {
+        pr_err("lfsr_write: kmalloc returned NULL.");
+        return -ENOMEM;
+    }
+
+    if (copy_from_user(kbuffer, buffer, size) != 0) {
+        kfree(kbuffer);
+        return -EFAULT;
+    }
+
     mutex_lock(&lfsr_mutex);
 
-    for (size_t length = size; length >= sizeof(lfsr_state); length -= sizeof(lfsr_state), buffer += sizeof(lfsr_state)) {
-        lfsr_t value;
-        get_user(value, (lfsr_t *)buffer);
-        lfsr_state ^= value;
+    for (size_t length = size; length >= sizeof(lfsr_state); length -= sizeof(lfsr_state), kbuffer += sizeof(lfsr_state)) {
+        lfsr_state ^= *(lfsr_t *)kbuffer;
     }
 
     mutex_unlock(&lfsr_mutex);
+    kfree(kbuffer);
 
     return size;
 }
